@@ -1,0 +1,15 @@
+{
+    "tabWidth": 4,
+    "trailingComma": "es5",
+    "arrowParens": "avoid",
+    "printWidth": 120,
+    "quoteProps": "consistent",
+    "overrides": [
+        {
+            "files": "*.json",
+            "options": {
+                "printWidth": 80
+            }
+        }
+    ]
+}

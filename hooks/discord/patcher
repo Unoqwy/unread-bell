@@ -1,0 +1,51 @@
+#!/bin/sh
+# hooks/discord/patcher
+#
+# Patches Discord electron app to retrieves internal notification state
+# and send it to unread-bell through a FIFO.
+# Does nothing if the app is already patched.
+#
+# Parameters:
+# $1: Discord config directory (e.g. ~/.config/discord)
+
+if [[ -z "$1" ]]; then
+    >&2 echo "Missing parameter: Discord config directory.";
+    exit 1
+fi
+
+DIRNAME=$(dirname "$(readlink -f "$0")")
+(
+    cd "$1"
+    DIR=$(find . -type d -name '0.*' | sort | tail -n1)
+    if [[ -z "$DIR" ]]; then
+        >&2 echo "Invalid Discord config location. Make sure it's the right path an try again."
+        exit 1
+    fi
+
+    cd "$DIR/modules/discord_desktop_core"
+    if asar l core.asar | grep -q "/bell-patched"; then
+        echo "Discord is already patched with unread-bell's hook."
+        # TODO: check if $DIRNAME changed, and if so extract from core.asar.original and re-patch
+        exit 0
+    fi
+
+    rm -rf core-unpacked
+    asar e core.asar core-unpacked
+
+    function patch_file {
+        patch "$1.js" <(cat "$DIRNAME/$1.patch" | sed "s#\$UNREAD_PATCH_DIR#$DIRNAME#g")
+    }
+
+    (
+        cd core-unpacked/app
+        patch_file mainScreen
+        patch_file mainScreenPreload
+        cd ..
+        echo "$DIRNAME" > bell-patched
+    )
+
+    cp core.asar core.asar.original
+    asar p core-unpacked core.asar
+    rm -r core-unpacked
+    echo "Success! Discord is now patched with unread-bell's hook."
+)

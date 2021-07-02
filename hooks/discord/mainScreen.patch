@@ -1,0 +1,19 @@
+--- app/mainScreen.js	2021-07-02 10:34:31.473202905 +0200
++++ app/mainScreenPatched.js	2021-07-02 10:37:00.580356255 +0200
+@@ -997,6 +997,16 @@
+   }
+ 
+   launchMainAppWindow(false);
++  if (mainWindow != null) {
++    mainWindow.webContents.once("dom-ready", () => {
++      require("fs").readFile("$UNREAD_PATCH_DIR/inject.js", "utf-8", (error, js) => {
++        if (error) {
++          return;
++        }
++        mainWindow.webContents.executeJavaScript(js);
++      });
++    });
++  }
+ }
+ 
+ function handleOpenUrl(url) {
