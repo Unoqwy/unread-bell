@@ -30,7 +30,7 @@ function sendPacket(packet) {
         console.error("[unread-bell] Cannot send packet because the writestream is not initialized.");
         return;
     }
-    
+
     if (!init()) {
         return;
     }

@@ -1,6 +1,10 @@
 {
-    "private" : true,
+    "private": true,
+    "scripts": {
+        "style": "yarn prettier --write *.{js,json}"
+    },
     "devDependencies": {
-        "@types/node": "^15.12.5"
+        "@types/node": "^15.12.5",
+        "prettier": "^2.3.2"
     }
 }
