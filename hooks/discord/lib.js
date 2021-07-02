@@ -6,7 +6,7 @@ const { createWriteStream } = require("fs");
 let pipeWriteStream;
 
 function init() {
-    if (pipeWriteStream !== undefined) {
+    if (pipeWriteStream !== undefined && !pipeWriteStream.destroyed) {
         return true;
     }
 
@@ -28,6 +28,10 @@ function init() {
 function sendPacket(packet) {
     if (pipeWriteStream === undefined) {
         console.error("[unread-bell] Cannot send packet because the writestream is not initialized.");
+        return;
+    }
+    
+    if (!init()) {
         return;
     }
 
