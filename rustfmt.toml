@@ -1,0 +1,14 @@
+unstable_features = true
+edition = "2018"
+
+match_block_trailing_comma = true
+newline_style = "Unix"
+normalize_comments = true
+overflow_delimited_expr = true
+use_field_init_shorthand = true
+use_small_heuristics = "Max"
+
+group_imports = "StdExternalCrate"
+imports_granularity = "Module"
+imports_layout = "HorizontalVertical"
+reorder_imports = true

@@ -1,0 +1,22 @@
+[package]
+name = "unread-bell"
+version = "0.1.0"
+edition = "2018"
+description = "Advanced Discord notifications wherever you want them"
+license = "MIT"
+
+[[bin]]
+name = "unread-bell"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+clap = "2.33"
+base64 = "0.13"
+tungstenite = { version = "0.13", features = ["native-tls"] }
+mlua = { version = "0.6", features = ["luajit", "vendored"] }
+
+[profile.release]
+lto = true
+panic = "abort"

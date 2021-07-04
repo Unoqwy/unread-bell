@@ -5,8 +5,8 @@
    });
    window.popouts = new Map();
 +
-+  const UnreadBellLib = require("$UNREAD_PATCH_DIR/lib.js");
-+  contextBridge.exposeInMainWorld("UnreadBellLib", UnreadBellLib);
++  const UnreadBellPreload = require("$UNREAD_PATCH_DIR/preload.js")("$UNREAD_PATCH_DIR");
++  contextBridge.exposeInMainWorld("UnreadBellPreload", UnreadBellPreload);
  } else {
    window.addEventListener('load', _ => {
      window.opener.popouts.set(window.name, window);

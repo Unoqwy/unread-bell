@@ -1,6 +1,14 @@
-(() => {
-    /** Time in millis after which a sync packet will be forced sent even though no changes have been detected */
-    const SYNC_PACKET_FORCE_AFTER = 120_000;
+(wsUrl => {
+    /** Websocket URL to connect to if preload does not give one */
+    const DEFAULT_WS_URL = "ws://127.0.0.1:3631";
+    /** Delay in millis to try to [re]connect to the Websocket once it gets closed */
+    const RECONNECT_AFTER = 5_000;
+
+    if (wsUrl === undefined) {
+        wsUrl = DEFAULT_WS_URL;
+    }
+
+    /* Webpack Injection */
 
     let webpackModules;
     const injectId = Math.random().toString(36).substring(2);
@@ -27,45 +35,126 @@
      * @param {string} functionName - The name of the function as stored in its webpack's module
      */
     function getFunction(functionName) {
-        const fn = Object.values(webpackModules)
+        const fnMod = Object.values(webpackModules)
             .map(mod => mod.exports)
             .filter(mod => mod !== undefined)
             .map(mod => (typeof mod.default === "object" ? mod.default : mod))
-            .find(mod => mod[functionName] !== undefined && typeof mod[functionName] === "function")[functionName];
-        if (fn === undefined) {
+            .find(mod => mod[functionName] !== undefined && typeof mod[functionName] === "function");
+        if (fnMod === undefined) {
             console.error("[unread-bell] Could not find function '" + functionName + "'!");
         }
-        return fn;
+        return fnMod[functionName];
     }
 
-    const getUnreadPrivateChannelIds = getFunction("getUnreadPrivateChannelIds");
-    const getUnreadGuilds = getFunction("getUnreadGuilds");
-    const getMentionCounts = getFunction("getMentionCounts");
+    /* Websocket connection */
 
-    let lastUpdatePayload, lastSynced;
+    let ws;
 
-    function checkNotifications() {
-        const payload = {
-            privateMessages: getUnreadPrivateChannelIds(),
-            unreadGuilds: Object.keys(getUnreadGuilds()),
-            unreadGuildMentions: Object.fromEntries(
-                Object.entries(getMentionCounts()).filter(([guild, count]) => guild && count > 0)
-            ),
+    function wsInit() {
+        if (ws?.readyState === WebSocket.OPEN) {
+            return;
+        }
+
+        ws = new WebSocket(wsUrl);
+        // TODO: optional authentification
+
+        ws.onopen = function () {
+            console.log("[unread-bell] Connection to unread-bell daemon was successful.");
+            if (lastUpdatePayload !== undefined) {
+                checkNotifications(true);
+            }
         };
 
-        const payloadB64 = UnreadBellLib.b64(payload);
-        const now = new Date();
+        let wasError = false;
+        ws.onerror = function () {
+            return (wasError = true);
+        };
 
-        let forced = false;
-        if (payloadB64 !== lastUpdatePayload || (forced = now - lastSynced >= SYNC_PACKET_FORCE_AFTER)) {
-            UnreadBellLib.sendPacket({
-                type: "UPDATE",
+        ws.onclose = function () {
+            if (!wasError) {
+                console.warn(
+                    "[unread-bell] Connection to unread-bell daemon was closed. Reconnecting in " +
+                        RECONNECT_AFTER +
+                        "ms."
+                );
+            }
+            setTimeout(function () {
+                wsInit();
+            }, RECONNECT_AFTER);
+        };
+    }
+
+    function sendPacket(packet) {
+        if (ws?.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        ws.send(b64(packet));
+    }
+
+    function b64(obj) {
+        return btoa(JSON.stringify(obj));
+    }
+
+    /* Main */
+
+    const getGuild = getFunction("getGuild");
+    const getChannel = getFunction("getChannel");
+    const getUnreadPrivateChannelIds = getFunction("getUnreadPrivateChannelIds");
+    const getMentionCount = getFunction("getMentionCount");
+    const getUnreadGuilds = getFunction("getUnreadGuilds");
+    const getGuildUnreadCount = getFunction("getGuildUnreadCount");
+    const getMentionCounts = getFunction("getMentionCounts");
+
+    let lastUpdatePayload;
+
+    function checkNotifications(revive = false) {
+        const dms = {},
+            groups = {},
+            guilds = {};
+        getUnreadPrivateChannelIds().forEach(privateChannelId => {
+            const privateChannel = getChannel(privateChannelId);
+            if (privateChannel.type === 1) {
+                const recipient = privateChannel.rawRecipients[0];
+                if (!recipient) {
+                    return;
+                }
+                dms[recipient.id] = {
+                    channelId: privateChannelId,
+                    unreadCount: getMentionCount(privateChannelId),
+                    lastMessageId: privateChannel.lastMessageId,
+                    username: recipient.username,
+                    discriminator: recipient.discriminator,
+                };
+            } else if (privateChannel.type === 3) {
+                groups[privateChannelId] = {
+                    unreadCount: getMentionCount(privateChannelId),
+                    lastMessageId: privateChannel.lastMessageId,
+                    name: privateChannel.name,
+                    users: privateChannel.recipients,
+                };
+            }
+        });
+
+        const mentionCounts = getMentionCounts();
+        Object.keys(getUnreadGuilds()).forEach(guildId => {
+            const guild = getGuild(guildId);
+            guilds[guildId] = {
+                unreadCount: getGuildUnreadCount(guildId),
+                mentionCount: mentionCounts[guildId],
+                name: guild.name,
+            };
+        });
+
+        const payload = { dms, groups, guilds };
+        const payloadB64 = b64(payload);
+        if (payloadB64 !== lastUpdatePayload || revive) {
+            sendPacket({
+                type: "Update",
                 payload: payload,
-                forced: forced,
+                revive: revive,
             });
 
             lastUpdatePayload = payloadB64;
-            lastSynced = now;
         }
     }
 
@@ -74,13 +163,21 @@
         runningIntervals: [],
         _debug: {
             getFunction,
+            scope: function () {
+                return {
+                    wsUrl,
+                    ws,
+                    wsInit,
+                    lastUpdatePayload,
+                    sendPacket,
+                };
+            },
         },
     };
 
-    if (UnreadBellLib.init()) {
-        setTimeout(function () {
-            checkNotifications();
-            window.UnreadBell.runningIntervals.push(setInterval(checkNotifications, 1000));
-        }, 2500);
-    }
-})();
+    wsInit();
+    setTimeout(function () {
+        checkNotifications();
+        window.UnreadBell.runningIntervals.push(setInterval(checkNotifications, 1000));
+    }, 2500);
+})(window.UnreadBellPreload?.wsUrl);
