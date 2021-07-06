@@ -3,9 +3,9 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 
 use serde::Deserialize;
-
-use tungstenite::Message;
-use tungstenite::{accept, WebSocket};
+use tungstenite::error::Error::Protocol;
+use tungstenite::error::ProtocolError;
+use tungstenite::{accept, HandshakeError, Message, WebSocket};
 
 #[macro_use]
 extern crate clap;
@@ -76,9 +76,13 @@ fn main() {
 
     let server = TcpListener::bind(address).unwrap();
     for tcp_stream in server.incoming() {
-        thread::spawn(move || {
-            let mut ws = accept(tcp_stream.unwrap()).unwrap();
-            handle_ws(&mut ws);
+        thread::spawn(move || match accept(tcp_stream.unwrap()) {
+            Ok(mut ws) => handle_ws(&mut ws),
+            // just a ping from lib.checkSocket
+            Err(HandshakeError::Failure(Protocol(ProtocolError::HandshakeIncomplete))) => return,
+            Err(e) => {
+                panic!("{:#?}", e);
+            },
         });
     }
 }
@@ -92,14 +96,14 @@ fn handle_ws(ws: &mut WebSocket<TcpStream>) {
                         serde_json::from_slice(&base64::decode(b64_packet).unwrap()[..]).unwrap(),
                     )
                 }
-            }
+            },
             Err(tungstenite::Error::ConnectionClosed) => {
                 // TODO: clean up status bar
                 break;
-            }
+            },
             Err(e) => {
                 panic!("{:#?}", e);
-            }
+            },
         }
     }
 }

@@ -1,4 +1,4 @@
-(wsUrl => {
+((wsUrl, lib) => {
     /** Websocket URL to connect to if preload does not give one */
     const DEFAULT_WS_URL = "ws://127.0.0.1:3631";
     /** Delay in millis to try to [re]connect to the Websocket once it gets closed */
@@ -48,6 +48,7 @@
 
     /* Websocket connection */
 
+    const wsUrlObj = new URL(wsUrl);
     let ws;
 
     function wsInit() {
@@ -55,12 +56,26 @@
             return;
         }
 
+        if (lib !== undefined) {
+            lib.checkSocket(wsUrlObj.hostname, wsUrlObj.port)
+                .then(() => __wsInit())
+                .catch(() => {
+                    setTimeout(function () {
+                        wsInit();
+                    }, RECONNECT_AFTER);
+                });
+        } else {
+            __wsInit();
+        }
+    }
+
+    function __wsInit() {
         ws = new WebSocket(wsUrl);
         // TODO: optional authentification
 
         ws.onopen = function () {
             console.log("[unread-bell] Connection to unread-bell daemon was successful.");
-            if (lastUpdatePayload !== undefined) {
+            if (lastUpdatePayloadB64 !== undefined) {
                 checkNotifications(true);
             }
         };
@@ -73,9 +88,7 @@
         ws.onclose = function () {
             if (!wasError) {
                 console.warn(
-                    "[unread-bell] Connection to unread-bell daemon was closed. Reconnecting in " +
-                        RECONNECT_AFTER +
-                        "ms."
+                    "[unread-bell] Connection to unread-bell daemon was closed. Retrying in " + RECONNECT_AFTER + "ms."
                 );
             }
             setTimeout(function () {
@@ -105,9 +118,7 @@
     const getGuildUnreadCount = getFunction("getGuildUnreadCount");
     const getMentionCounts = getFunction("getMentionCounts");
 
-    let lastUpdatePayload;
-
-    function checkNotifications(revive = false) {
+    function getNotificationsPayload() {
         const dms = {},
             groups = {},
             guilds = {};
@@ -144,22 +155,27 @@
                 name: guild.name,
             };
         });
+        return { dms, groups, guilds };
+    }
 
-        const payload = { dms, groups, guilds };
+    let lastUpdatePayloadB64;
+
+    function checkNotifications(revive = false) {
+        const payload = getNotificationsPayload();
         const payloadB64 = b64(payload);
-        if (payloadB64 !== lastUpdatePayload || revive) {
+        if (payloadB64 !== lastUpdatePayloadB64 || revive) {
             sendPacket({
                 type: "Update",
                 payload: payload,
                 revive: revive,
             });
 
-            lastUpdatePayload = payloadB64;
+            lastUpdatePayloadB64 = payloadB64;
         }
     }
 
     window.UnreadBell = {
-        checkNotifications,
+        getNotificationsPayload,
         runningIntervals: [],
         _debug: {
             getFunction,
@@ -168,7 +184,9 @@
                     wsUrl,
                     ws,
                     wsInit,
-                    lastUpdatePayload,
+                    __wsInit,
+                    lastUpdatePayloadB64,
+                    checkNotifications,
                     sendPacket,
                 };
             },
@@ -180,4 +198,4 @@
         checkNotifications();
         window.UnreadBell.runningIntervals.push(setInterval(checkNotifications, 1000));
     }, 2500);
-})(window.UnreadBellPreload?.wsUrl);
+})(window.UnreadBellPreload?.wsUrl, window.UnreadBellPreload?.lib);
