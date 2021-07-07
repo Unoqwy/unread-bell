@@ -15,7 +15,9 @@ serde_json = "1.0"
 clap = "2.33"
 base64 = "0.13"
 tungstenite = { version = "0.13", features = ["native-tls"] }
-mlua = { version = "0.6", features = ["luajit", "vendored"] }
+
+shellexpand = "2.1"
+mlua = { version = "0.6", features = ["luajit", "vendored", "serialize", "send"] }
 
 [profile.release]
 lto = true
