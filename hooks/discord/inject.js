@@ -12,18 +12,19 @@
 
     let webpackModules;
     const injectId = Math.random().toString(36).substring(2);
-    const injected = {
-        [injectId]: function (_, _, i) {
-            const cleanedUp = Object.values(i)
+    webpackChunkdiscord_app.push([
+        [injectId],
+        {},
+        req => {
+            const cleanedUp = Object.values(req)
                 .filter(val => typeof val === "object" && injectId in val)
                 .every(val => delete val[injectId]);
             if (!cleanedUp) {
                 console.error("[unread-bell] Could not clean up webpack injection.");
             }
-            webpackModules = i.c;
+            webpackModules = req.c;
         },
-    };
-    webpackJsonp.push([[], injected, [[injectId]]]);
+    ]);
 
     if (webpackModules === undefined || typeof webpackModules !== "object") {
         console.error("[unread-bell] Failed to fetch webpack modules, unread messages won't be reported!");
@@ -33,15 +34,22 @@
     /**
      * Gets a reference to an internal Discord function.
      * @param {string} functionName - The name of the function as stored in its webpack's module
+     * @param {number|undefined} params - Number of parameters of target function
      */
-    function getFunction(functionName) {
+    function getFunction(functionName, params) {
         const fnMod = Object.values(webpackModules)
             .map(mod => mod.exports)
             .filter(mod => mod !== undefined)
             .map(mod => (typeof mod.default === "object" ? mod.default : mod))
-            .find(mod => mod[functionName] !== undefined && typeof mod[functionName] === "function");
+            .find(
+                mod =>
+                    mod[functionName] !== undefined &&
+                    typeof mod[functionName] === "function" &&
+                    (params === undefined || mod[functionName].length === params)
+            );
         if (fnMod === undefined) {
             console.error("[unread-bell] Could not find function '" + functionName + "'!");
+            return;
         }
         return fnMod[functionName];
     }
@@ -110,13 +118,12 @@
 
     /* Main */
 
-    const getGuild = getFunction("getGuild");
-    const getChannel = getFunction("getChannel");
+    const getGuilds = getFunction("getGuilds", 0);
+    const getChannel = getFunction("getChannel", 1);
     const getUnreadPrivateChannelIds = getFunction("getUnreadPrivateChannelIds");
-    const getMentionCount = getFunction("getMentionCount");
-    const getUnreadGuilds = getFunction("getUnreadGuilds");
-    const getGuildUnreadCount = getFunction("getGuildUnreadCount");
-    const getMentionCounts = getFunction("getMentionCounts");
+    const getChannelMentionCount = getFunction("getMentionCount", 2);
+    const getGuildMentionCount = getFunction("getMentionCount", 1);
+    const getGuildUnreadCount = getFunction("getUnreadCount", 2);
 
     function getNotificationsPayload() {
         const dms = {},
@@ -131,14 +138,14 @@
                 }
                 dms[recipient.id] = {
                     channelId: privateChannelId,
-                    unreadCount: getMentionCount(privateChannelId),
+                    unreadCount: getChannelMentionCount(privateChannelId),
                     lastMessageId: privateChannel.lastMessageId,
                     username: recipient.username,
                     discriminator: recipient.discriminator,
                 };
             } else if (privateChannel.type === 3) {
                 groups[privateChannelId] = {
-                    unreadCount: getMentionCount(privateChannelId),
+                    unreadCount: getGuildMentionCount(privateChannelId),
                     lastMessageId: privateChannel.lastMessageId,
                     name: privateChannel.name,
                     users: privateChannel.recipients,
@@ -146,15 +153,16 @@
             }
         });
 
-        const mentionCounts = getMentionCounts();
-        Object.keys(getUnreadGuilds()).forEach(guildId => {
-            const guild = getGuild(guildId);
-            guilds[guildId] = {
-                unreadCount: getGuildUnreadCount(guildId),
-                mentionCount: mentionCounts[guildId],
-                name: guild.name,
-            };
-        });
+        Object.values(getGuilds())
+            .map(guild => [guild.id, guild.name, getGuildMentionCount(guild.id), getGuildUnreadCount(guild.id)])
+            .filter(([_id, _name, mentions, unread]) => mentions > 0 || unread > 0)
+            .forEach(([id, name, mentions, unread]) => {
+                guilds[id] = {
+                    unreadCount: unread,
+                    mentionCount: mentions,
+                    name: name,
+                };
+            });
         return { dms, groups, guilds };
     }
 
@@ -196,6 +204,6 @@
     wsInit();
     setTimeout(function () {
         checkNotifications();
-        window.UnreadBell.runningIntervals.push(setInterval(checkNotifications, 1000));
+        window.UnreadBell.runningIntervals.push(setInterval(checkNotifications, 1500));
     }, 2500);
 })(window.UnreadBellPreload?.wsUrl, window.UnreadBellPreload?.lib);
