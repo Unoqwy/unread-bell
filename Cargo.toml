@@ -2,7 +2,7 @@
 name = "unread-bell"
 version = "0.2.0"
 edition = "2021"
-description = "Advanced Discord notifications wherever you want them"
+description = "Discord notifications aggregation daemon"
 license = "MIT"
 
 [[bin]]
